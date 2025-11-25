@@ -22,20 +22,27 @@ app.post('/api/configure', async (req, res) => {
   try {
     const { userId, cloudName, apiKey, apiSecret } = req.body;
 
-    if (!userId || !cloudName || !apiKey || !apiSecret) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'All fields are required'
-      });
+    // 🚫 PREVENT DUPLICATE CLOUDINARY ACCOUNTS
+    const { data: existingCloudinaryAccount, error: checkError } = await supabase
+      .from('cloudinary_users')
+      .select('user_id')
+      .eq('cloud_name', cloudName)
+      .eq('api_key', apiKey)
+      .single();
+
+    if (existingCloudinaryAccount) {
+      if (existingCloudinaryAccount.user_id !== userId) {
+        return res.status(400).json({
+          status: 'error',
+          message: `This Cloudinary account is already connected by another user. Each Cloudinary account can only be linked to one Cliq user.`
+        });
+      }
     }
 
+    // Test credentials and upsert...
     const isValid = await testCloudinaryCredentials(cloudName, apiKey, apiSecret);
-
     if (!isValid) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Invalid Cloudinary credentials. Please check and try again.'
-      });
+      return res.status(400).json({ status: 'error', message: 'Invalid credentials' });
     }
 
     const { error } = await supabase
@@ -48,30 +55,72 @@ app.post('/api/configure', async (req, res) => {
           api_secret: apiSecret,
           updated_at: new Date().toISOString()
         },
-        {
-          onConflict: 'user_id'
-        }
+        { onConflict: 'user_id' }
       );
 
-    if (error) {
-      console.error('Supabase error:', error);
-      return res.status(500).json({
-        status: 'error',
-        message: 'Failed to store credentials'
-      });
-    }
+    if (error) throw error;
 
     res.json({
       status: 'success',
-      message: 'Cloudinary credentials configured successfully!',
+      message: 'Cloudinary account connected successfully!',
       cloud_name: cloudName
     });
+
   } catch (error) {
     console.error('Configure error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Internal server error'
+    res.status(500).json({ status: 'error', message: 'Configuration failed' });
+  }
+});app.post('/api/configure', async (req, res) => {
+  try {
+    const { userId, cloudName, apiKey, apiSecret } = req.body;
+
+    // 🚫 PREVENT DUPLICATE CLOUDINARY ACCOUNTS
+    const { data: existingCloudinaryAccount, error: checkError } = await supabase
+      .from('cloudinary_users')
+      .select('user_id')
+      .eq('cloud_name', cloudName)
+      .eq('api_key', apiKey)
+      .single();
+
+    if (existingCloudinaryAccount) {
+      if (existingCloudinaryAccount.user_id !== userId) {
+        return res.status(400).json({
+          status: 'error',
+          message: `This Cloudinary account is already connected by another user. Each Cloudinary account can only be linked to one Cliq user.`
+        });
+      }
+    }
+
+    // Test credentials and upsert...
+    const isValid = await testCloudinaryCredentials(cloudName, apiKey, apiSecret);
+    if (!isValid) {
+      return res.status(400).json({ status: 'error', message: 'Invalid credentials' });
+    }
+
+    const { error } = await supabase
+      .from('cloudinary_users')
+      .upsert(
+        {
+          user_id: userId,
+          cloud_name: cloudName,
+          api_key: apiKey,
+          api_secret: apiSecret,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (error) throw error;
+
+    res.json({
+      status: 'success',
+      message: 'Cloudinary account connected successfully!',
+      cloud_name: cloudName
     });
+
+  } catch (error) {
+    console.error('Configure error:', error);
+    res.status(500).json({ status: 'error', message: 'Configuration failed' });
   }
 });
 
