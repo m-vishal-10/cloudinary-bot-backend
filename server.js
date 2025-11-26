@@ -4,14 +4,32 @@ const cloudinary = require('cloudinary').v2;
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 const multer = require('multer');
-const upload = multer();
+const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+
+const jsonParser = express.json({ limit: '10mb' });
+const urlEncodedParser = express.urlencoded({ extended: true, limit: '10mb' });
+
+app.use((req, res, next) => {
+  if (req.is('multipart/form-data')) {
+    return next();
+  }
+
+  if (req.is('application/x-www-form-urlencoded')) {
+    return urlEncodedParser(req, res, next);
+  }
+
+  if (!req.headers['content-type'] || req.is('application/json')) {
+    return jsonParser(req, res, next);
+  }
+
+  return next();
+});
 
 // Supabase client
 const supabase = createClient(
@@ -126,10 +144,16 @@ app.post('/api/configure', async (req, res) => {
   }
 });
 
-// ✅ File Upload Endpoint - Handles base64 files
-app.post('/api/upload-file', async (req, res) => {
+// ✅ File Upload Endpoint - Handles base64 JSON payloads & multipart form-data
+app.post('/api/upload-file', upload.single('file'), async (req, res) => {
   try {
-    const { userId, fileData, fileName, fileType } = req.body;
+    let { userId, fileData, fileName, fileType } = req.body;
+
+    if (req.file) {
+      fileName = req.file.originalname;
+      fileType = req.file.mimetype;
+      fileData = req.file.buffer.toString('base64');
+    }
 
     console.log('File upload request - User ID:', userId);
     console.log('File details:', {
