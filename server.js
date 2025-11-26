@@ -125,17 +125,19 @@ app.post('/api/configure', async (req, res) => {
 });
 
 // Upload endpoint
+// Modified /api/upload endpoint - handles both URL and File uploads
 app.post('/api/upload', async (req, res) => {
   try {
-    const { userId, imageUrl } = req.body;
+    const { userId, imageUrl, fileData, fileName, fileType } = req.body;
 
-    if (!userId || !imageUrl) {
+    if (!userId) {
       return res.status(400).json({
         status: 'error',
-        message: 'User ID and image URL are required'
+        message: 'User ID is required'
       });
     }
 
+    // Get user's credentials from Supabase
     const { data: userData, error } = await supabase
       .from('cloudinary_users')
       .select('*')
@@ -149,15 +151,36 @@ app.post('/api/upload', async (req, res) => {
       });
     }
 
+    // Configure Cloudinary
     cloudinary.config({
       cloud_name: userData.cloud_name,
       api_key: userData.api_key,
       api_secret: userData.api_secret
     });
 
-    const uploadResult = await cloudinary.uploader.upload(imageUrl, {
-      resource_type: 'auto'
-    });
+    let uploadResult;
+
+    // Handle URL upload
+    if (imageUrl) {
+      uploadResult = await cloudinary.uploader.upload(imageUrl, {
+        resource_type: 'auto'
+      });
+    }
+    // Handle file upload (base64)
+    else if (fileData) {
+      // Create data URI from base64
+      const dataUri = `data:${fileType || 'image/jpeg'};base64,${fileData}`;
+      uploadResult = await cloudinary.uploader.upload(dataUri, {
+        resource_type: 'auto',
+        public_id: fileName ? fileName.split('.')[0] : undefined
+      });
+    }
+    else {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Either imageUrl or fileData is required'
+      });
+    }
 
     res.json({
       status: 'success',
@@ -168,6 +191,7 @@ app.post('/api/upload', async (req, res) => {
       width: uploadResult.width,
       height: uploadResult.height
     });
+
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({
