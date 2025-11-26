@@ -3,6 +3,8 @@ const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
+const multer = require('multer');
+const upload = multer();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -124,8 +126,81 @@ app.post('/api/configure', async (req, res) => {
   }
 });
 
-// Upload endpoint
-// Modified /api/upload endpoint - handles both URL and File uploads
+// ✅ File Upload Endpoint - Handles multipart form data
+app.post('/api/upload-file', upload.single('file'), async (req, res) => {
+  try {
+    const userId = req.body.userId;
+    const file = req.file;
+
+    console.log('File upload request - User ID:', userId);
+    console.log('File details:', file ? {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size
+    } : 'No file');
+
+    if (!userId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'User ID is required'
+      });
+    }
+
+    if (!file) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'File is required'
+      });
+    }
+
+    // Get user's credentials from Supabase
+    const { data: userData, error } = await supabase
+      .from('cloudinary_users')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !userData) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Cloudinary not configured. Please run /configure first.'
+      });
+    }
+
+    // Configure Cloudinary
+    cloudinary.config({
+      cloud_name: userData.cloud_name,
+      api_key: userData.api_key,
+      api_secret: userData.api_secret
+    });
+
+    // Convert buffer to base64 and upload
+    const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    
+    const uploadResult = await cloudinary.uploader.upload(dataUri, {
+      resource_type: 'auto',
+      public_id: file.originalname.split('.')[0]
+    });
+
+    res.json({
+      status: 'success',
+      secure_url: uploadResult.secure_url,
+      public_id: uploadResult.public_id,
+      format: uploadResult.format,
+      bytes: uploadResult.bytes,
+      width: uploadResult.width,
+      height: uploadResult.height
+    });
+
+  } catch (error) {
+    console.error('File upload error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'File upload failed: ' + error.message
+    });
+  }
+});
+
 app.post('/api/upload', async (req, res) => {
   try {
     const { userId, imageUrl, fileData, fileName, fileType } = req.body;
