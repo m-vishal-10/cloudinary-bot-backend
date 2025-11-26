@@ -126,18 +126,17 @@ app.post('/api/configure', async (req, res) => {
   }
 });
 
-// ✅ File Upload Endpoint - Handles multipart form data
-app.post('/api/upload-file', upload.single('file'), async (req, res) => {
+// ✅ File Upload Endpoint - Handles base64 files
+app.post('/api/upload-file', async (req, res) => {
   try {
-    const userId = req.body.userId;
-    const file = req.file;
+    const { userId, fileData, fileName, fileType } = req.body;
 
     console.log('File upload request - User ID:', userId);
-    console.log('File details:', file ? {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size
-    } : 'No file');
+    console.log('File details:', {
+      fileName: fileName,
+      fileType: fileType,
+      dataLength: fileData ? fileData.length : 0
+    });
 
     if (!userId) {
       return res.status(400).json({
@@ -146,10 +145,10 @@ app.post('/api/upload-file', upload.single('file'), async (req, res) => {
       });
     }
 
-    if (!file) {
+    if (!fileData) {
       return res.status(400).json({
         status: 'error',
-        message: 'File is required'
+        message: 'File data is required'
       });
     }
 
@@ -174,13 +173,15 @@ app.post('/api/upload-file', upload.single('file'), async (req, res) => {
       api_secret: userData.api_secret
     });
 
-    // Convert buffer to base64 and upload
-    const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    // Create data URI from base64
+    const dataUri = `data:${fileType || 'image/jpeg'};base64,${fileData}`;
     
     const uploadResult = await cloudinary.uploader.upload(dataUri, {
       resource_type: 'auto',
-      public_id: file.originalname.split('.')[0]
+      public_id: fileName ? fileName.split('.')[0] : `file_${Date.now()}`
     });
+
+    console.log('File upload successful:', uploadResult.secure_url);
 
     res.json({
       status: 'success',
